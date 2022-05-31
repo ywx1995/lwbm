@@ -1,0 +1,380 @@
+
+public class AES {
+ 
+    private static SecretKeySpec secretKey;
+    private static byte[] key;
+    
+    public static void setKey(SecretKey myKey) 
+    {
+        MessageDigest sha = null;
+        try {
+            String str=new String(Base64.getEncoder().encodeToString(myKey.getEncoded()));
+            key = str.getBytes("UTF-8");
+            sha = MessageDigest.getInstance("SHA-1");
+            key = sha.digest(key);
+            key = Arrays.copyOf(key, 16); 
+            secretKey = new SecretKeySpec(key, "AES");
+            } 
+        catch (Exception e) {
+            e.printStackTrace();
+        } 
+    }
+ 
+    public static String encrypt(String strToString, SecretKey secret) 
+    {
+        try
+        {
+            setKey(secret);
+            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey);
+            return Base64.getEncoder().encodeToString(cipher.doFinal(strToString.getBytes("UTF-8")));
+        } 
+        catch (Exception e) 
+        {
+            e.printStackTrace();
+        }
+        return null;
+    }
+ 
+    
+    public static String decrypt(String strToDecrypt, SecretKey secret) 
+    {
+        try
+        {
+            setKey(secret);
+            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5PADDING");
+            cipher.init(Cipher.DECRYPT_MODE, secretKey);
+            return new String(cipher.doFinal(Base64.getDecoder().decode(strToDecrypt)));
+        } 
+        catch (Exception e) 
+        {
+            e.printStackTrace();
+        }
+        return null;
+    }
+}
+
+public class RSA {
+	    public BigInteger p, q;
+	    public BigInteger n;
+	    public BigInteger PhiN;
+	    public BigInteger e, d;
+	    public RSA()//构造函数
+	    {
+	        Initialize();//调用Initialize函数
+	    }
+	    //Generate e and d
+	    //e:- Public Key
+	    //d:- Private Key
+	    public void Initialize()
+	    {    
+	        int SIZE = 512;
+	        //p和q用来生成RSA加密算法的密钥对
+	        p=new BigInteger("8513222065247162701695105220665738877312063308356937563625345485856710133446374665834898192825484459951443770023314504441479244278247980992441766519074969");
+	        q=new BigInteger("8364581280641288933593527550533091363060086128207408134848028170130641974184553465641962883238792572920670310338579332490687347012348067644317739328586993");
+	        n = p.multiply(q);
+	        PhiN = p.subtract(BigInteger.valueOf(1));
+	        PhiN = PhiN.multiply( q.subtract( BigInteger.valueOf(1)));
+	        do
+	        {
+	            e = new BigInteger(2*SIZE, new Random());
+	        }
+	        while( (e.compareTo(PhiN) != 1)||(e.gcd(PhiN).compareTo(BigInteger.valueOf(1)) != 0));
+	        d = e.modInverse(PhiN);
+	    }
+	    public BigInteger encrypt(BigInteger plaintext)
+	    {
+	        return plaintext.modPow(e, n);
+	    }
+	    public BigInteger decrypt(BigInteger ciphertext)
+	    {
+	        return ciphertext.modPow(d, n);
+	    }
+	}
+public class Encryption {
+    
+    protected RSA rsa;
+    public Encryption()
+    {
+        rsa = new RSA();
+    }
+    public MessageUtil encryptMessage(String message) throws NoSuchAlgorithmException
+    {
+        //AES密钥生成
+        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+        SecretKey key = keyGen.generateKey();
+        //AES对明文message加密
+        message= AES.encrypt(message, key);
+        return new MessageUtil(message,key);
+    }
+    public MessageUtil encryptKey(MessageUtil messageUtil)
+    {
+        BigInteger key = rsa.encrypt(messageUtil.getBigIntKey());//RSA加密之前AES用来加密文件的密钥
+        messageUtil.setKey(key);
+        return messageUtil;
+    }
+    public MessageUtil decryptKey(MessageUtil messageUtil)
+    {
+        BigInteger key = rsa.decrypt(messageUtil.getBigIntKey());
+        messageUtil.setKey(key);
+        return messageUtil;
+    }
+    
+    public String decryptMessage(MessageUtil messageUtil)
+    {
+        SecretKey key = messageUtil.getKey();
+        String message = AES.decrypt(messageUtil.getMessage(), key);
+        return message;
+    }
+    
+}
+public class MessageUtil {
+    private String message;
+    private BigInteger key;
+    
+    public MessageUtil(String message,SecretKey key)
+    {
+        this.message = message;
+        this.key = new BigInteger(Base64.getEncoder().encodeToString(key.getEncoded()).getBytes());
+    }
+    //base64:为了方便把含有不可见字符串的信息用可见字符串表示出来，以便复制粘贴；
+    public MessageUtil(String message,BigInteger key)
+    {
+        this.message = message;
+        this.key = key;
+    }
+    
+    public void setMessage(String message)
+    {
+        this.message = message;
+    }
+    
+    public void setKey(SecretKey key)
+    {
+        this.key = new BigInteger(Base64.getEncoder().encodeToString(key.getEncoded()).getBytes());
+    }
+            
+    public void setKey(BigInteger key)
+    {
+        this.key = key;
+    }
+    
+    public String getMessage()
+    {
+        return message;
+    }
+    
+    public SecretKey getKey()
+    {
+        String keyString = new String(key.toByteArray());
+        byte[] decodedKey = Base64.getDecoder().decode(keyString);
+        // 从给定的字节数组decodedKey中构造一个秘密密钥secretKey
+        SecretKey secretKey = new SecretKeySpec(decodedKey, 0, decodedKey.length, "AES");
+        return secretKey;
+    }
+    
+    public BigInteger getBigIntKey()
+    {
+        return key;
+    }
+}
+public class ProxyReEncryption extends Encryption{
+ 
+    public ProxyReEncryption()
+    {
+        super();
+    }
+    
+    public MessageUtil reEncrypt(MessageUtil messageUtil, Encryption sender, Encryption reciever)
+    {
+        this.rsa.e = reciever.rsa.e.multiply(sender.rsa.d);
+        BigInteger key = messageUtil.getBigIntKey();
+        key = rsa.encrypt(key);
+        messageUtil.setKey(key);
+        return messageUtil;
+    }
+}
+public class ProxyReEncryptionUsingRSAAES {
+	 public static void main(String[] args) {
+	        try {
+	            //Initialise Sender, Server and Reciever
+	            Encryption sender = new Encryption();
+	            ProxyReEncryption server = new ProxyReEncryption();
+	            Encryption reciever = new Encryption();           
+	            //输入文本
+	            String message = Files.readString(Paths.get("F:\\个人资料\\袁闻新\\测试数据\\10M.txt"));
+	          // Scanner sc = new Scanner(System.in);
+	           // System.out.println("Enter message: ");
+	         //  message = sc.nextLine();
+	            System.out.println();
+	            //加密
+	            MessageUtil senderUtil = sender.encryptMessage(message);     
+	     
+	            //输出AES密钥
+	            System.out.println("Key: "+senderUtil.getBigIntKey());         
+	            senderUtil = sender.encryptKey(senderUtil);   
+	            //输出加密密钥和加密密文
+	           // System.out.println("Encrypted Key: "+senderUtil.getBigIntKey());
+	          //  System.out.println("Encrypted Message: "+senderUtil.getMessage());
+	            //重加密
+	         //   long startTime1 = System.currentTimeMillis();
+	            MessageUtil serverUtil = server.reEncrypt(senderUtil, sender, reciever);
+	            //输出重加密密钥
+	        //    System.out.println("Re-Encrypted Key: "+serverUtil.getBigIntKey());     
+	          //  long endTime1 = System.currentTimeMillis();
+	        //    System.out.println(endTime1-startTime1);//重加密时间
+	            //解密
+	           // long startTime2 = System.currentTimeMillis();
+	            long startTime = System.currentTimeMillis();
+	            MessageUtil recieverUtil = reciever.decryptKey(serverUtil);
+	            String decryptedMessage = reciever.decryptMessage(recieverUtil);	
+	            long endTime = System.currentTimeMillis();
+	            System.out.println(endTime-startTime);
+	            //输出解密密钥
+	         //  System.out.println("Decrypted Key: "+recieverUtil.getBigIntKey()+"\n");	            
+	            //输出解密密文=明文
+	        //   System.out.println("Decrypted Message: \n"+decryptedMessage);	
+	         //  long endTime = System.currentTimeMillis();
+	                    //解密时间
+	        } catch (Exception e) {
+	            e.printStackTrace();
+	        }
+	   }
+}
+
+pragma solidity ^0.4.23;
+
+contract Patientcentricaccesscontrol  {
+address public patient;
+string public datadescription; 
+string patientdatahash;                       
+string Patientpubkey;
+string Keywordindex;
+myStruct patientInfo;
+  //结构
+struct myStruct{
+    string name;
+    uint age;
+    address userAddress;
+    uint phone;
+}
+  //映射
+mapping(address=> bool) public Classification;//用户的类型 true代表患者(true or false)
+mapping (address=> bool) public recordList;//请求访问者的地址和结果(true or false)
+mapping (address => bool) public approvedIRs; //被允许访问用户的地址的结果 (true or false)
+mapping(address=> string) public dataHashes; // 用于使用hash值映射用户地址
+mapping(address=> string) public Keyword;//用于使用关键词索引映射用户地址
+mapping(address=> bool) public authorized;//用于判断是否被授权
+mapping(string=> myStruct) registry;
+//constructor
+function Patientcentricaccesscontrol() {
+    patientInfo = myStruct("ywx",18,msg.sender,17685771679);
+    datadescription = "Medical health record data";
+    patient= msg.sender;
+    Patientpubkey= "tk2348jbjkasAdorfsertakAFoipsfasfSE"; //添加示例公钥
+    patientdatahash= "QmNaS5gQzoPxr3S2n6T6BsFuVRmMFwpohLVFfAFrU8gyTq";//示例医疗记录哈希值
+}  
+  //修饰符
+     modifier  Onlypatient(){
+        require(msg.sender == patient); 
+        _;
+    }
+    modifier Notpatient(){
+        require(msg.sender!=patient);
+        _;
+    }
+    //枚举
+    enum userType{patient,hosptial,institute}
+ //事件
+    event RegistrationInput(string info,address user);
+    event ClassificationInput(address user,string info);
+    event Applicationaccess(address requester,string info);
+    event RequestedForApproval(address requester, string info);    
+    event Requestaccepted(address user, string info);
+    event GenerateIndex(address patientAddress,string info);
+    event AuthorizedUser(address requesterAddress,string info);
+    event Searchresults(address userAddress,string info);
+    event Incentive(address patient,string info);
+    event UserRemoved(address requesterAddress, string info);
+    event Approved(address requester, string info);     
+    event Reason(address user, string info);
+    event AuthorizationSuccess(address requester,string info, address patient);
+    event AuthorizationFailed(address requester,string info, address patient);
+//functions
+   /* function Registration_hospital(address hosptialAddress) public returns(address){//注册合约
+    RegistrationInput("hosptial which patient treated registered successfully",hosptialAddress);
+    return hosptialAddress;
+    }
+    */
+    function Registration_contract(address userPersonalAddress) public returns(address){//注册合约
+    RegistrationInput("User registered successfully",userPersonalAddress);
+    return userPersonalAddress;
+    }
+ /* function Classification_contract(address userAddress){//分类合约
+       ClassificationInput(userAddress,"Determine the type of user");
+       if(userAddress==msg.sender){
+           userType usertype=userType.patient;
+           ClassificationInput(userAddress," user is the patient");
+           Classification[userAddress]=true;
+       }else{
+           userType thirdtype=userType.institute;
+           ClassificationInput(userAddress,"user is the third party");
+           Classification[userAddress]=false;
+       }
+    }
+    */
+    function Access_contract(address userAddress, string dataHash) public {//许可合约
+       dataHashes[userAddress] = dataHash; //上传用户地址的哈希值
+       if(sha256(dataHashes[userAddress]) == sha256(patientdatahash)) //比较哈希值以验证授权
+       {
+            Applicationaccess(userAddress,"patients can directly access their own data");
+            recordList[userAddress] = true;
+            approvedIRs[userAddress] =true;
+            Approved(userAddress, "Authorized to access data");
+        }
+        else if(sha256(dataHashes[userAddress]) != sha256(patientdatahash)){
+              if(approvedIRs[userAddress]=true){//经过患者允许访问的结果
+                  Applicationaccess(userAddress,"user requests access in order to access the medical health records");
+                  recordList[userAddress] = true;
+                  Requestaccepted(userAddress,"user gets access");
+             }  
+           else{//未经过患者同意访问
+               recordList[userAddress]=false;
+               Reason(userAddress,"the user cannot access without the patient’s permission");
+           }
+        }
+    }
+    function Incentive_contract(address patientAddress,uint N,uint Q) Onlypatient public{//激励合约
+           Incentive(patientAddress,"patient gets reward R=R_s+R_q");
+    }
+    function Revoke_contract(address requesterAddress, string dataHash) public {
+    require(msg.sender == patient); 
+    dataHashes[requesterAddress] = dataHash;
+     if(sha256(dataHashes[requesterAddress]) == sha256(patientdatahash))
+      {
+      UserRemoved(msg.sender, "removed");
+      recordList[requesterAddress] = false;
+      approvedIRs[requesterAddress] = false;
+      Reason(requesterAddress, " Contract expired");
+      }
+     }
+    function Trace_authorization( address requesterAddress, address patientAddress ) public {
+      if(recordList[requesterAddress] == true && approvedIRs[requesterAddress] == true )
+        if(patientAddress == patient) {
+        //显示数据访问权限的事件已由患者验证 
+        AuthorizationSuccess(requesterAddress,"Authorized to access data by:", patientAddress);
+        }
+       else  if(recordList[requesterAddress] == false && approvedIRs[requesterAddress] == false )
+        if(patientAddress == patient) {
+            AuthorizationFailed(requesterAddress,"data is not authorized to access by:", patientAddress);
+        }
+      }
+      function addAuthoritityUser(address requesterAddress){//患者添加授权集合U
+        if(recordList[requesterAddress] == true && approvedIRs[requesterAddress] == true ){
+            AuthorizedUser(requesterAddress,"the user is authorized to perform search operations");
+            authorized[requesterAddress]=true;
+        }else{
+            authorized[requesterAddress]=false;
+        }
+    }
+}
